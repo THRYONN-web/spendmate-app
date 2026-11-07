@@ -17,7 +17,7 @@
     }
   </style>
 </head>
-<body class="p-4 pb-20 select-none">
+<body class="p-4 pb-28 select-none">
   <!-- Шапка -->
   <header class="flex justify-between items-center mb-5">
     <div>
@@ -45,7 +45,7 @@
   <section class="mb-6">
     <div class="flex justify-between items-center mb-3">
       <h2 class="text-xs font-bold text-slate-400 uppercase tracking-wider">Мои подписки</h2>
-      <span id="limit-warning" class="hidden text-xs text-amber-400 font-medium">Лимит исчерпан</span>
+      <span id="limit-warning" class="hidden text-xs text-amber-400 font-medium">Лимит 3/3 (Free)</span>
     </div>
 
     <div id="subs-list" class="space-y-2.5"></div>
@@ -57,7 +57,7 @@
     </div>
   </section>
 
-  <!-- Пресеты -->
+  <!-- Быстрый выбор -->
   <section class="mb-5">
     <div class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2.5">Быстрый выбор</div>
     <div class="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
@@ -71,7 +71,7 @@
   <!-- Форма добавления -->
   <section class="card p-5 rounded-2xl border border-slate-700/60 mb-6">
     <h3 class="text-sm font-bold mb-3 flex items-center gap-2">
-      <span>➕</span> Добавить новую подписку
+      <span>➕</span> Добавить подписку в список
     </h3>
     <div class="space-y-3">
       <div>
@@ -88,36 +88,57 @@
           <input id="sub-day" type="number" min="1" max="31" placeholder="от 1 до 31" class="w-full px-3 py-2.5 rounded-xl bg-slate-900/70 border border-slate-700 text-sm focus:outline-none focus:border-indigo-500">
         </div>
       </div>
-      <button onclick="saveAndSend()" class="w-full mt-2 py-3 bg-indigo-600 hover:bg-indigo-500 active:scale-98 text-white font-semibold rounded-xl text-sm transition-all shadow-lg shadow-indigo-600/30">
-        Сохранить подписку
+      <button onclick="addSubLocally()" class="w-full mt-2 py-3 bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white font-semibold rounded-xl text-sm transition-all shadow-lg shadow-indigo-600/30">
+        ➕ Добавить в список
       </button>
     </div>
   </section>
 
+  <!-- Плавающая панель сохранения (появляется только при изменениях) -->
+  <div id="sync-bar" class="hidden fixed bottom-0 left-0 right-0 p-4 bg-slate-950/90 backdrop-blur-md border-t border-slate-800 z-50">
+    <button onclick="syncWithBot()" class="w-full py-3.5 bg-emerald-500 hover:bg-emerald-400 active:scale-98 text-slate-950 font-extrabold rounded-xl text-sm shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2">
+      <span>💾 Сохранить изменения в бота</span>
+    </button>
+  </div>
+
   <script>
     const tg = window.Telegram?.WebApp;
+    let appState = { is_pro: false, subs: [] };
+    let hasUnsavedChanges = false;
+
     if (tg) {
       tg.ready();
       tg.expand();
       if (tg.initDataUnsafe?.user?.first_name) {
         document.getElementById('user-greeting').innerHTML = `${tg.initDataUnsafe.user.first_name} <span id="pro-badge" class="hidden text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/40 px-2 py-0.5 rounded-full font-bold">PRO</span>`;
       }
+      // Настраиваем нативную главную кнопку Telegram
+      tg.MainButton.setText("💾 СОХРАНИТЬ ИЗМЕНЕНИЯ");
+      tg.MainButton.color = "#10b981";
+      tg.MainButton.textColor = "#022c22";
+      tg.MainButton.onClick(syncWithBot);
     }
 
-    let appState = { is_pro: false, subs: [] };
+    function markDirty() {
+      hasUnsavedChanges = true;
+      localStorage.setItem('spendmate_cache', JSON.stringify(appState));
+      if (tg && tg.MainButton) {
+        tg.MainButton.show();
+      } else {
+        document.getElementById('sync-bar').classList.remove('hidden');
+      }
+      // На всякий случай показываем и встроенную кнопку внизу экрана
+      document.getElementById('sync-bar').classList.remove('hidden');
+    }
 
-    // Безопасное чтение данных
     function parsePayload() {
       try {
         const urlParams = new URLSearchParams(window.location.search);
         let encoded = urlParams.get('d');
 
         if (encoded) {
-          // Коррекция Base64URL и добавление недостающего padding '='
           encoded = encoded.replace(/-/g, '+').replace(/_/g, '/');
-          while (encoded.length % 4 !== 0) {
-            encoded += '=';
-          }
+          while (encoded.length % 4 !== 0) encoded += '=';
           const binary = atob(encoded);
           const bytes = Uint8Array.from(binary, c => c.charCodeAt(0));
           const decodedJson = new TextDecoder().decode(bytes);
@@ -131,20 +152,13 @@
           const cached = localStorage.getItem('spendmate_cache');
           if (cached) {
             const parsed = JSON.parse(cached);
-            if (parsed && Array.isArray(parsed.subs)) {
-              appState = parsed;
-            }
+            if (parsed && Array.isArray(parsed.subs)) appState = parsed;
           }
         }
       } catch (err) {
-        console.error("Ошибка парсинга:", err);
-        const cached = localStorage.getItem('spendmate_cache');
-        if (cached) {
-          try { appState = JSON.parse(cached); } catch (e) {}
-        }
+        console.error("Ошибка чтения:", err);
       }
 
-      // Гарантируем корректную структуру данных
       if (!appState || !Array.isArray(appState.subs)) {
         appState = { is_pro: false, subs: [] };
       }
@@ -165,7 +179,7 @@
 
     function getServiceIcon(title) {
       const t = String(title || '').toLowerCase();
-      if (t.includes('tg') || t.includes('telegr')) return '⭐';
+      if (t.includes('tg') || t.includes('telegr') || t.includes('тг')) return '⭐';
       if (t.includes('янд') || t.includes('plus') || t.includes('плюс')) return '🔴';
       if (t.includes('vpn') || t.includes('впн')) return '🛡';
       if (t.includes('vk') || t.includes('вк')) return '🎵';
@@ -202,7 +216,7 @@
       let nextSubTitle = '';
 
       subsList.innerHTML = '';
-      if (!appState.subs || appState.subs.length === 0) {
+      if (appState.subs.length === 0) {
         emptyState.classList.remove('hidden');
         nextPayHint.innerText = 'Ближайшая оплата: —';
       } else {
@@ -220,7 +234,7 @@
           let daysText = daysLeft === 0 ? 'Сегодня' : daysLeft === 1 ? 'Завтра' : `через ${daysLeft} дн.`;
 
           const card = document.createElement('div');
-          card.className = "card p-3.5 rounded-xl border border-slate-700/40 flex items-center justify-between";
+          card.className = "card p-3.5 rounded-xl border border-slate-700/40 flex items-center justify-between transition-all";
           card.innerHTML = `
             <div class="flex items-center gap-3">
               <div class="w-10 h-10 rounded-xl bg-slate-800/80 border border-slate-700 flex items-center justify-center text-lg">
@@ -233,7 +247,7 @@
             </div>
             <div class="flex items-center gap-3">
               <div class="font-extrabold text-sm text-indigo-300">${price} ₽</div>
-              <button onclick="requestDelete(${sub.id}, '${sub.title}')" class="p-2 text-slate-500 hover:text-rose-400 active:scale-90 transition-transform">
+              <button onclick="removeSubLocally(${sub.id})" class="p-2 text-slate-400 hover:text-rose-400 active:scale-90 transition-transform">
                 🗑
               </button>
             </div>
@@ -251,53 +265,66 @@
       document.getElementById('sub-title').value = title;
       document.getElementById('sub-price').value = price;
       document.getElementById('sub-day').value = new Date().getDate();
+      tg?.HapticFeedback?.impactOccurred('light');
     }
 
-    function saveAndSend() {
-      const title = document.getElementById('sub-title').value.trim();
-      const price = parseFloat(document.getElementById('sub-price').value);
-      const day = parseInt(document.getElementById('sub-day').value);
+    // Добавление БЕЗ закрытия приложения
+    function addSubLocally() {
+      const titleInput = document.getElementById('sub-title');
+      const priceInput = document.getElementById('sub-price');
+      const dayInput = document.getElementById('sub-day');
+
+      const title = titleInput.value.trim();
+      const price = parseFloat(priceInput.value);
+      const day = parseInt(dayInput.value);
 
       if (!title || isNaN(price) || price <= 0 || isNaN(day) || day < 1 || day > 31) {
-        tg?.showAlert ? tg.showAlert('Заполните корректно все поля') : alert('Заполните корректно все поля');
+        tg?.HapticFeedback?.notificationOccurred('error');
+        tg?.showAlert ? tg.showAlert('Заполните корректно название, цену и день (1–31)') : alert('Заполните все поля');
         return;
       }
 
-      const payload = { action: 'add_sub', title: title, price: price, pay_day: day };
+      if (!appState.is_pro && appState.subs.length >= 3) {
+        tg?.HapticFeedback?.notificationOccurred('warning');
+        tg?.showAlert ? tg.showAlert('⚠️ Лимит Free-тарифа — 3 подписки.\nОформите SpendMate PRO в чате бота, чтобы снять ограничения!') : alert('Лимит 3 подписки');
+        return;
+      }
+
+      appState.subs.push({
+        id: Date.now(),
+        title: title,
+        price: price,
+        pay_day: day
+      });
+
+      // Очищаем поля ввода
+      titleInput.value = '';
+      priceInput.value = '';
+      dayInput.value = '';
+
+      tg?.HapticFeedback?.notificationOccurred('success');
+      renderDashboard();
+      markDirty();
+    }
+
+    // Удаление БЕЗ закрытия приложения
+    function removeSubLocally(id) {
+      appState.subs = appState.subs.filter(s => s.id !== id);
+      tg?.HapticFeedback?.impactOccurred('medium');
+      renderDashboard();
+      markDirty();
+    }
+
+    // Пакетная отправка всех изменений в бота одним кликом
+    function syncWithBot() {
+      const payload = {
+        action: 'sync_subs',
+        subs: appState.subs
+      };
       if (tg && tg.sendData) {
         tg.sendData(JSON.stringify(payload));
       } else {
-        alert(JSON.stringify(payload));
-      }
-    }
-
-    function requestDelete(id, title) {
-      const doDelete = () => {
-        // Мгновенно удаляем карточку из интерфейса и кэша
-        appState.subs = appState.subs.filter(s => s.id !== id);
-        localStorage.setItem('spendmate_cache', JSON.stringify(appState));
-        renderDashboard();
-
-        const payload = { action: 'delete_sub', id: parseInt(id) };
-
-        try {
-          if (tg && tg.sendData) {
-            tg.sendData(JSON.stringify(payload));
-            return;
-          }
-        } catch (e) {}
-
-        if (tg && tg.openTelegramLink) {
-          tg.openTelegramLink(`https://t.me/SpendMateFinanceBot?start=del_${id}`);
-        }
-      };
-
-      if (tg && tg.showConfirm) {
-        tg.showConfirm(`Удалить подписку "${title}"?`, function(confirmed) {
-          if (confirmed) doDelete();
-        });
-      } else {
-        if (confirm(`Удалить подписку "${title}"?`)) doDelete();
+        alert('Синхронизация: ' + JSON.stringify(payload));
       }
     }
 
