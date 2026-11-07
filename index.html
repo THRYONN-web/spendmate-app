@@ -18,7 +18,7 @@
   </style>
 </head>
 <body class="p-4 pb-20 select-none">
-  <!-- Шапка профиля -->
+  <!-- Шапка -->
   <header class="flex justify-between items-center mb-5">
     <div>
       <span class="text-[11px] text-slate-400 font-semibold tracking-wider uppercase">Личный кабинет</span>
@@ -41,16 +41,14 @@
     </div>
   </section>
 
-  <!-- Список активных подписок -->
+  <!-- Список подписок -->
   <section class="mb-6">
     <div class="flex justify-between items-center mb-3">
       <h2 class="text-xs font-bold text-slate-400 uppercase tracking-wider">Мои подписки</h2>
       <span id="limit-warning" class="hidden text-xs text-amber-400 font-medium">Лимит исчерпан</span>
     </div>
 
-    <div id="subs-list" class="space-y-2.5">
-      <!-- Динамические карточки подписок -->
-    </div>
+    <div id="subs-list" class="space-y-2.5"></div>
 
     <div id="empty-state" class="hidden py-8 text-center card rounded-2xl border border-dashed border-slate-700/60">
       <div class="text-2xl mb-1">📦</div>
@@ -59,7 +57,7 @@
     </div>
   </section>
 
-  <!-- Быстрые пресеты -->
+  <!-- Пресеты -->
   <section class="mb-5">
     <div class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2.5">Быстрый выбор</div>
     <div class="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
@@ -70,7 +68,7 @@
     </div>
   </section>
 
-  <!-- Форма добавления новой подписки -->
+  <!-- Форма добавления -->
   <section class="card p-5 rounded-2xl border border-slate-700/60 mb-6">
     <h3 class="text-sm font-bold mb-3 flex items-center gap-2">
       <span>➕</span> Добавить новую подписку
@@ -108,41 +106,65 @@
 
     let appState = { is_pro: false, subs: [] };
 
-    // Декодирование данных UTF-8 из Base64 URL
+    // Безопасное чтение данных
     function parsePayload() {
-      const urlParams = new URLSearchParams(window.location.search);
-      const encoded = urlParams.get('d');
-      if (encoded) {
-        try {
-          const binary = atob(encoded.replace(/-/g, '+').replace(/_/g, '/'));
+      try {
+        const urlParams = new URLSearchParams(window.location.search);
+        let encoded = urlParams.get('d');
+
+        if (encoded) {
+          // Коррекция Base64URL и добавление недостающего padding '='
+          encoded = encoded.replace(/-/g, '+').replace(/_/g, '/');
+          while (encoded.length % 4 !== 0) {
+            encoded += '=';
+          }
+          const binary = atob(encoded);
           const bytes = Uint8Array.from(binary, c => c.charCodeAt(0));
-          appState = JSON.parse(new TextDecoder().decode(bytes));
-          localStorage.setItem('spendmate_cache', JSON.stringify(appState));
-        } catch (e) {
-          console.error("Ошибка парсинга:", e);
+          const decodedJson = new TextDecoder().decode(bytes);
+          const parsed = JSON.parse(decodedJson);
+
+          if (parsed && Array.isArray(parsed.subs)) {
+            appState = parsed;
+            localStorage.setItem('spendmate_cache', JSON.stringify(appState));
+          }
+        } else {
+          const cached = localStorage.getItem('spendmate_cache');
+          if (cached) {
+            const parsed = JSON.parse(cached);
+            if (parsed && Array.isArray(parsed.subs)) {
+              appState = parsed;
+            }
+          }
         }
-      } else {
+      } catch (err) {
+        console.error("Ошибка парсинга:", err);
         const cached = localStorage.getItem('spendmate_cache');
         if (cached) {
           try { appState = JSON.parse(cached); } catch (e) {}
         }
       }
+
+      // Гарантируем корректную структуру данных
+      if (!appState || !Array.isArray(appState.subs)) {
+        appState = { is_pro: false, subs: [] };
+      }
       renderDashboard();
     }
 
     function getDaysUntil(payDay) {
+      if (!payDay) return 0;
       const today = new Date();
       const currentDay = today.getDate();
-      let diff = payDay - currentDay;
+      let diff = parseInt(payDay) - currentDay;
       if (diff < 0) {
-        const daysInCurrentMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
-        diff += daysInCurrentMonth;
+        const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+        diff += daysInMonth;
       }
       return diff;
     }
 
     function getServiceIcon(title) {
-      const t = title.toLowerCase();
+      const t = String(title || '').toLowerCase();
       if (t.includes('tg') || t.includes('telegr')) return '⭐';
       if (t.includes('янд') || t.includes('plus') || t.includes('плюс')) return '🔴';
       if (t.includes('vpn') || t.includes('впн')) return '🛡';
@@ -159,14 +181,19 @@
       const counterEl = document.getElementById('sub-counter-badge');
       const proBadge = document.getElementById('pro-badge');
       const nextPayHint = document.getElementById('next-pay-hint');
+      const limitWarning = document.getElementById('limit-warning');
 
       if (appState.is_pro) {
         proBadge?.classList.remove('hidden');
         counterEl.innerText = `Подписок: ${appState.subs.length} (PRO)`;
+        limitWarning?.classList.add('hidden');
       } else {
+        proBadge?.classList.add('hidden');
         counterEl.innerText = `Подписок: ${appState.subs.length}/3`;
         if (appState.subs.length >= 3) {
-          document.getElementById('limit-warning')?.classList.remove('hidden');
+          limitWarning?.classList.remove('hidden');
+        } else {
+          limitWarning?.classList.add('hidden');
         }
       }
 
@@ -175,14 +202,16 @@
       let nextSubTitle = '';
 
       subsList.innerHTML = '';
-      if (appState.subs.length === 0) {
+      if (!appState.subs || appState.subs.length === 0) {
         emptyState.classList.remove('hidden');
         nextPayHint.innerText = 'Ближайшая оплата: —';
       } else {
         emptyState.classList.add('hidden');
         appState.subs.forEach(sub => {
-          total += sub.price;
+          const price = parseFloat(sub.price) || 0;
+          total += price;
           const daysLeft = getDaysUntil(sub.pay_day);
+
           if (daysLeft < minDays) {
             minDays = daysLeft;
             nextSubTitle = sub.title;
@@ -203,7 +232,7 @@
               </div>
             </div>
             <div class="flex items-center gap-3">
-              <div class="font-extrabold text-sm text-indigo-300">${sub.price} ₽</div>
+              <div class="font-extrabold text-sm text-indigo-300">${price} ₽</div>
               <button onclick="requestDelete(${sub.id}, '${sub.title}')" class="p-2 text-slate-500 hover:text-rose-400 active:scale-90 transition-transform">
                 🗑
               </button>
@@ -235,37 +264,44 @@
       }
 
       const payload = { action: 'add_sub', title: title, price: price, pay_day: day };
-      tg?.sendData ? tg.sendData(JSON.stringify(payload)) : alert(JSON.stringify(payload));
-    }
-
-function requestDelete(id, title) {
-  const tg = window.Telegram?.WebApp;
-
-  const doDelete = () => {
-    const payload = { action: 'delete_sub', id: parseInt(id) };
-    
-    // Попытка отправить через sendData (если открыто из нижнего меню чата)
-    try {
       if (tg && tg.sendData) {
         tg.sendData(JSON.stringify(payload));
-        return;
+      } else {
+        alert(JSON.stringify(payload));
       }
-    } catch (e) {
-      console.warn("sendData недоступен:", e);
     }
 
-    // Резервный способ (если открыто через кнопку меню или inline-кнопку)
-    if (tg && tg.openTelegramLink) {
-      tg.openTelegramLink(`https://t.me/SpendMateFinanceBot?start=del_${id}`);
-    }
-  };
+    function requestDelete(id, title) {
+      const doDelete = () => {
+        // Мгновенно удаляем карточку из интерфейса и кэша
+        appState.subs = appState.subs.filter(s => s.id !== id);
+        localStorage.setItem('spendmate_cache', JSON.stringify(appState));
+        renderDashboard();
 
-  // Нативный попап Telegram вместо заблокированного confirm()
-  if (tg && tg.showConfirm) {
-    tg.showConfirm(`Удалить подписку "${title}"?`, function(confirmed) {
-      if (confirmed) doDelete();
-    });
-  } else {
-    doDelete();
-  }
-}
+        const payload = { action: 'delete_sub', id: parseInt(id) };
+
+        try {
+          if (tg && tg.sendData) {
+            tg.sendData(JSON.stringify(payload));
+            return;
+          }
+        } catch (e) {}
+
+        if (tg && tg.openTelegramLink) {
+          tg.openTelegramLink(`https://t.me/SpendMateFinanceBot?start=del_${id}`);
+        }
+      };
+
+      if (tg && tg.showConfirm) {
+        tg.showConfirm(`Удалить подписку "${title}"?`, function(confirmed) {
+          if (confirmed) doDelete();
+        });
+      } else {
+        if (confirm(`Удалить подписку "${title}"?`)) doDelete();
+      }
+    }
+
+    parsePayload();
+  </script>
+</body>
+</html>
