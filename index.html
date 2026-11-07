@@ -238,14 +238,34 @@
       tg?.sendData ? tg.sendData(JSON.stringify(payload)) : alert(JSON.stringify(payload));
     }
 
-    function requestDelete(id, title) {
-      if (confirm(`Удалить подписку "${title}"?`)) {
-        const payload = { action: 'delete_sub', id: id };
-        tg?.sendData ? tg.sendData(JSON.stringify(payload)) : alert(JSON.stringify(payload));
+function requestDelete(id, title) {
+  const tg = window.Telegram?.WebApp;
+
+  const doDelete = () => {
+    const payload = { action: 'delete_sub', id: parseInt(id) };
+    
+    // Попытка отправить через sendData (если открыто из нижнего меню чата)
+    try {
+      if (tg && tg.sendData) {
+        tg.sendData(JSON.stringify(payload));
+        return;
       }
+    } catch (e) {
+      console.warn("sendData недоступен:", e);
     }
 
-    parsePayload();
-  </script>
-</body>
-</html>
+    // Резервный способ (если открыто через кнопку меню или inline-кнопку)
+    if (tg && tg.openTelegramLink) {
+      tg.openTelegramLink(`https://t.me/SpendMateFinanceBot?start=del_${id}`);
+    }
+  };
+
+  // Нативный попап Telegram вместо заблокированного confirm()
+  if (tg && tg.showConfirm) {
+    tg.showConfirm(`Удалить подписку "${title}"?`, function(confirmed) {
+      if (confirmed) doDelete();
+    });
+  } else {
+    doDelete();
+  }
+}
