@@ -3,90 +3,95 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>SpendMate Mini App</title>
-  <!-- Telegram WebApp SDK -->
+  <title>SpendMate Dashboard</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     body {
-      background-color: var(--tg-theme-bg-color, #0f172a);
+      background-color: var(--tg-theme-bg-color, #090d16);
       color: var(--tg-theme-text-color, #f8fafc);
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     }
     .card {
-      background-color: var(--tg-theme-secondary-bg-color, #1e293b);
+      background-color: var(--tg-theme-secondary-bg-color, #131c2e);
     }
   </style>
 </head>
-<body class="p-4 pb-24 select-none">
-  <!-- Шапка -->
-  <header class="flex justify-between items-center mb-6">
+<body class="p-4 pb-20 select-none">
+  <!-- Шапка профиля -->
+  <header class="flex justify-between items-center mb-5">
     <div>
-      <span class="text-xs text-slate-400 uppercase tracking-wider font-semibold">Ваш бюджет</span>
-      <h1 class="text-2xl font-bold" id="user-greeting">SpendMate</h1>
+      <span class="text-[11px] text-slate-400 font-semibold tracking-wider uppercase">Личный кабинет</span>
+      <h1 class="text-xl font-bold flex items-center gap-1.5" id="user-greeting">
+        SpendMate <span id="pro-badge" class="hidden text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/40 px-2 py-0.5 rounded-full font-bold">PRO</span>
+      </h1>
     </div>
-    <div class="card px-3 py-1.5 rounded-full border border-slate-700/50 flex items-center gap-1.5">
-      <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-      <span class="text-xs font-medium text-slate-300">Синхронизировано</span>
+    <div id="sub-counter-badge" class="card px-3 py-1 rounded-xl border border-slate-700/60 text-xs text-slate-300 font-medium">
+      Подписок: 0/3
     </div>
   </header>
 
-  <!-- Карточка баланса -->
-  <section class="card p-5 rounded-2xl border border-slate-700/40 mb-6 shadow-lg shadow-indigo-950/20">
-    <div class="text-slate-400 text-sm mb-1">Всего регулярных трат:</div>
-    <div class="text-3xl font-extrabold text-indigo-400 tracking-tight" id="total-amount">0 ₽ <span class="text-sm font-normal text-slate-400">/ мес</span></div>
-    
-    <div class="mt-4 pt-3 border-t border-slate-700/50 flex justify-between text-xs text-slate-400">
-      <span>Уведомления: <b>за 24 часа</b></span>
-      <span id="sub-count">Подписок: 0</span>
+  <!-- Сводка расходов -->
+  <section class="card p-5 rounded-2xl border border-slate-700/50 mb-6 shadow-xl shadow-indigo-950/30">
+    <div class="text-xs text-slate-400 font-medium">Суммарный расход в месяц</div>
+    <div class="text-3xl font-black text-indigo-400 mt-1" id="total-sum">0 ₽</div>
+    <div class="mt-3 pt-3 border-t border-slate-700/40 flex justify-between items-center text-xs text-slate-400">
+      <span>Напоминания: <b class="text-slate-200">за 24 ч</b></span>
+      <span id="next-pay-hint">Ближайшая оплата: —</span>
     </div>
   </section>
 
-  <!-- Быстрые шаблоны -->
+  <!-- Список активных подписок -->
   <section class="mb-6">
-    <div class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Популярные сервисы</div>
-    <div class="flex gap-2 overflow-x-auto pb-2 scrollbar-none">
-      <button onclick="setPreset('Telegram Premium', 299)" class="card px-3 py-2 rounded-xl text-xs font-medium border border-slate-700/60 whitespace-nowrap active:scale-95 transition-transform">
-        ⭐ TG Premium (299 ₽)
-      </button>
-      <button onclick="setPreset('Яндекс Плюс', 299)" class="card px-3 py-2 rounded-xl text-xs font-medium border border-slate-700/60 whitespace-nowrap active:scale-95 transition-transform">
-        🔴 Яндекс Плюс (299 ₽)
-      </button>
-      <button onclick="setPreset('VPN', 150)" class="card px-3 py-2 rounded-xl text-xs font-medium border border-slate-700/60 whitespace-nowrap active:scale-95 transition-transform">
-        🛡 VPN (150 ₽)
-      </button>
-      <button onclick="setPreset('VK Музыка', 169)" class="card px-3 py-2 rounded-xl text-xs font-medium border border-slate-700/60 whitespace-nowrap active:scale-95 transition-transform">
-        🎵 VK Музыка (169 ₽)
-      </button>
+    <div class="flex justify-between items-center mb-3">
+      <h2 class="text-xs font-bold text-slate-400 uppercase tracking-wider">Мои подписки</h2>
+      <span id="limit-warning" class="hidden text-xs text-amber-400 font-medium">Лимит исчерпан</span>
+    </div>
+
+    <div id="subs-list" class="space-y-2.5">
+      <!-- Динамические карточки подписок -->
+    </div>
+
+    <div id="empty-state" class="hidden py-8 text-center card rounded-2xl border border-dashed border-slate-700/60">
+      <div class="text-2xl mb-1">📦</div>
+      <div class="text-sm font-semibold text-slate-300">Подписок пока нет</div>
+      <div class="text-xs text-slate-500 mt-1">Добавьте сервисы через форму ниже</div>
     </div>
   </section>
 
-  <!-- Форма добавления -->
-  <section class="card p-5 rounded-2xl border border-slate-700/50 mb-6">
-    <h2 class="text-base font-bold mb-4 flex items-center gap-2">
-      <span>➕</span> Добавить подписку
-    </h2>
+  <!-- Быстрые пресеты -->
+  <section class="mb-5">
+    <div class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2.5">Быстрый выбор</div>
+    <div class="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
+      <button onclick="setPreset('Telegram Premium', 299)" class="card px-3 py-2 rounded-xl text-xs font-medium border border-slate-700/60 whitespace-nowrap active:scale-95 transition-all">⭐ TG Premium (299 ₽)</button>
+      <button onclick="setPreset('Яндекс Плюс', 299)" class="card px-3 py-2 rounded-xl text-xs font-medium border border-slate-700/60 whitespace-nowrap active:scale-95 transition-all">🔴 Яндекс Плюс (299 ₽)</button>
+      <button onclick="setPreset('VPN', 150)" class="card px-3 py-2 rounded-xl text-xs font-medium border border-slate-700/60 whitespace-nowrap active:scale-95 transition-all">🛡 VPN (150 ₽)</button>
+      <button onclick="setPreset('VK Музыка', 169)" class="card px-3 py-2 rounded-xl text-xs font-medium border border-slate-700/60 whitespace-nowrap active:scale-95 transition-all">🎵 VK (169 ₽)</button>
+    </div>
+  </section>
 
+  <!-- Форма добавления новой подписки -->
+  <section class="card p-5 rounded-2xl border border-slate-700/60 mb-6">
+    <h3 class="text-sm font-bold mb-3 flex items-center gap-2">
+      <span>➕</span> Добавить новую подписку
+    </h3>
     <div class="space-y-3">
       <div>
-        <label class="block text-xs text-slate-400 mb-1">Название сервиса</label>
-        <input id="sub-title" type="text" placeholder="например: YouTube Premium" class="w-full px-3 py-2.5 rounded-xl bg-slate-900/60 border border-slate-700 text-sm focus:outline-none focus:border-indigo-500 transition-colors">
+        <label class="block text-[11px] text-slate-400 mb-1">Название</label>
+        <input id="sub-title" type="text" placeholder="например: YouTube, iCloud" class="w-full px-3 py-2.5 rounded-xl bg-slate-900/70 border border-slate-700 text-sm focus:outline-none focus:border-indigo-500">
       </div>
-
       <div class="grid grid-cols-2 gap-3">
         <div>
-          <label class="block text-xs text-slate-400 mb-1">Стоимость (₽)</label>
-          <input id="sub-price" type="number" placeholder="299" class="w-full px-3 py-2.5 rounded-xl bg-slate-900/60 border border-slate-700 text-sm focus:outline-none focus:border-indigo-500 transition-colors">
+          <label class="block text-[11px] text-slate-400 mb-1">Цена (₽)</label>
+          <input id="sub-price" type="number" placeholder="299" class="w-full px-3 py-2.5 rounded-xl bg-slate-900/70 border border-slate-700 text-sm focus:outline-none focus:border-indigo-500">
         </div>
         <div>
-          <label class="block text-xs text-slate-400 mb-1">День списания</label>
-          <input id="sub-day" type="number" min="1" max="31" placeholder="число от 1 до 31" class="w-full px-3 py-2.5 rounded-xl bg-slate-900/60 border border-slate-700 text-sm focus:outline-none focus:border-indigo-500 transition-colors">
+          <label class="block text-[11px] text-slate-400 mb-1">Число списания</label>
+          <input id="sub-day" type="number" min="1" max="31" placeholder="от 1 до 31" class="w-full px-3 py-2.5 rounded-xl bg-slate-900/70 border border-slate-700 text-sm focus:outline-none focus:border-indigo-500">
         </div>
       </div>
-
-      <button onclick="saveAndSend()" class="w-full mt-2 py-3 bg-indigo-600 hover:bg-indigo-500 active:scale-98 text-white font-semibold rounded-xl text-sm transition-all shadow-lg shadow-indigo-600/30 flex justify-center items-center gap-2">
-        <span>Сохранить в бота</span>
+      <button onclick="saveAndSend()" class="w-full mt-2 py-3 bg-indigo-600 hover:bg-indigo-500 active:scale-98 text-white font-semibold rounded-xl text-sm transition-all shadow-lg shadow-indigo-600/30">
+        Сохранить подписку
       </button>
     </div>
   </section>
@@ -97,8 +102,120 @@
       tg.ready();
       tg.expand();
       if (tg.initDataUnsafe?.user?.first_name) {
-        document.getElementById('user-greeting').innerText = `Привет, ${tg.initDataUnsafe.user.first_name}!`;
+        document.getElementById('user-greeting').innerHTML = `${tg.initDataUnsafe.user.first_name} <span id="pro-badge" class="hidden text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/40 px-2 py-0.5 rounded-full font-bold">PRO</span>`;
       }
+    }
+
+    let appState = { is_pro: false, subs: [] };
+
+    // Декодирование данных UTF-8 из Base64 URL
+    function parsePayload() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const encoded = urlParams.get('d');
+      if (encoded) {
+        try {
+          const binary = atob(encoded.replace(/-/g, '+').replace(/_/g, '/'));
+          const bytes = Uint8Array.from(binary, c => c.charCodeAt(0));
+          appState = JSON.parse(new TextDecoder().decode(bytes));
+          localStorage.setItem('spendmate_cache', JSON.stringify(appState));
+        } catch (e) {
+          console.error("Ошибка парсинга:", e);
+        }
+      } else {
+        const cached = localStorage.getItem('spendmate_cache');
+        if (cached) {
+          try { appState = JSON.parse(cached); } catch (e) {}
+        }
+      }
+      renderDashboard();
+    }
+
+    function getDaysUntil(payDay) {
+      const today = new Date();
+      const currentDay = today.getDate();
+      let diff = payDay - currentDay;
+      if (diff < 0) {
+        const daysInCurrentMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+        diff += daysInCurrentMonth;
+      }
+      return diff;
+    }
+
+    function getServiceIcon(title) {
+      const t = title.toLowerCase();
+      if (t.includes('tg') || t.includes('telegr')) return '⭐';
+      if (t.includes('янд') || t.includes('plus') || t.includes('плюс')) return '🔴';
+      if (t.includes('vpn') || t.includes('впн')) return '🛡';
+      if (t.includes('vk') || t.includes('вк')) return '🎵';
+      if (t.includes('music') || t.includes('музык') || t.includes('spot')) return '🎧';
+      if (t.includes('кино') || t.includes('film') || t.includes('иви') || t.includes('okko')) return '🎬';
+      return '💳';
+    }
+
+    function renderDashboard() {
+      const subsList = document.getElementById('subs-list');
+      const emptyState = document.getElementById('empty-state');
+      const totalSumEl = document.getElementById('total-sum');
+      const counterEl = document.getElementById('sub-counter-badge');
+      const proBadge = document.getElementById('pro-badge');
+      const nextPayHint = document.getElementById('next-pay-hint');
+
+      if (appState.is_pro) {
+        proBadge?.classList.remove('hidden');
+        counterEl.innerText = `Подписок: ${appState.subs.length} (PRO)`;
+      } else {
+        counterEl.innerText = `Подписок: ${appState.subs.length}/3`;
+        if (appState.subs.length >= 3) {
+          document.getElementById('limit-warning')?.classList.remove('hidden');
+        }
+      }
+
+      let total = 0;
+      let minDays = 999;
+      let nextSubTitle = '';
+
+      subsList.innerHTML = '';
+      if (appState.subs.length === 0) {
+        emptyState.classList.remove('hidden');
+        nextPayHint.innerText = 'Ближайшая оплата: —';
+      } else {
+        emptyState.classList.add('hidden');
+        appState.subs.forEach(sub => {
+          total += sub.price;
+          const daysLeft = getDaysUntil(sub.pay_day);
+          if (daysLeft < minDays) {
+            minDays = daysLeft;
+            nextSubTitle = sub.title;
+          }
+
+          let daysText = daysLeft === 0 ? 'Сегодня' : daysLeft === 1 ? 'Завтра' : `через ${daysLeft} дн.`;
+
+          const card = document.createElement('div');
+          card.className = "card p-3.5 rounded-xl border border-slate-700/40 flex items-center justify-between";
+          card.innerHTML = `
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-xl bg-slate-800/80 border border-slate-700 flex items-center justify-center text-lg">
+                ${getServiceIcon(sub.title)}
+              </div>
+              <div>
+                <div class="font-bold text-sm text-slate-200">${sub.title}</div>
+                <div class="text-[11px] text-slate-400">Списание: ${sub.pay_day}-го числа (${daysText})</div>
+              </div>
+            </div>
+            <div class="flex items-center gap-3">
+              <div class="font-extrabold text-sm text-indigo-300">${sub.price} ₽</div>
+              <button onclick="requestDelete(${sub.id}, '${sub.title}')" class="p-2 text-slate-500 hover:text-rose-400 active:scale-90 transition-transform">
+                🗑
+              </button>
+            </div>
+          `;
+          subsList.appendChild(card);
+        });
+
+        nextPayHint.innerText = minDays === 0 ? `Оплата сегодня: ${nextSubTitle}` : `Через ${minDays} дн. (${nextSubTitle})`;
+      }
+
+      totalSumEl.innerText = `${total} ₽`;
     }
 
     function setPreset(title, price) {
@@ -112,33 +229,23 @@
       const price = parseFloat(document.getElementById('sub-price').value);
       const day = parseInt(document.getElementById('sub-day').value);
 
-      if (!title) {
-        tg?.showAlert ? tg.showAlert('Введите название сервиса') : alert('Введите название сервиса');
-        return;
-      }
-      if (isNaN(price) || price <= 0) {
-        tg?.showAlert ? tg.showAlert('Введите корректную сумму') : alert('Введите корректную сумму');
-        return;
-      }
-      if (isNaN(day) || day < 1 || day > 31) {
-        tg?.showAlert ? tg.showAlert('День должен быть от 1 до 31') : alert('День должен быть от 1 до 31');
+      if (!title || isNaN(price) || price <= 0 || isNaN(day) || day < 1 || day > 31) {
+        tg?.showAlert ? tg.showAlert('Заполните корректно все поля') : alert('Заполните корректно все поля');
         return;
       }
 
-      const payload = {
-        action: 'add_sub',
-        title: title,
-        price: price,
-        pay_day: day
-      };
+      const payload = { action: 'add_sub', title: title, price: price, pay_day: day };
+      tg?.sendData ? tg.sendData(JSON.stringify(payload)) : alert(JSON.stringify(payload));
+    }
 
-      if (tg && tg.sendData) {
-        // Отправка данных боту и автоматическое закрытие WebApp
-        tg.sendData(JSON.stringify(payload));
-      } else {
-        alert('Данные готовы: ' + JSON.stringify(payload) + '\n(Откройте через кнопку Telegram, чтобы синхронизировать с ботом)');
+    function requestDelete(id, title) {
+      if (confirm(`Удалить подписку "${title}"?`)) {
+        const payload = { action: 'delete_sub', id: id };
+        tg?.sendData ? tg.sendData(JSON.stringify(payload)) : alert(JSON.stringify(payload));
       }
     }
+
+    parsePayload();
   </script>
 </body>
 </html>
