@@ -249,7 +249,7 @@
 
     function getUserId() {
       const urlParams = new URLSearchParams(window.location.search);
-      return tg?.initDataUnsafe?.user?.id || parseInt(urlParams.get('u')) || 0;
+      return appState?.user_id || parseInt(urlParams.get('u')) || tg?.initDataUnsafe?.user?.id || 0;
     }
 
     function triggerAutoSave() {
@@ -270,10 +270,10 @@
       autoSaveTimer = setTimeout(async () => {
         const userId = getUserId();
         if (!userId) {
-          console.warn("User ID не определен, сохранено локально.");
+          console.warn("User ID не определен!");
           if (statusEl && statusText) {
-            statusEl.className = "text-[10px] font-medium text-emerald-400 bg-emerald-500/10 border border-emerald-500/25 px-2.5 py-1 rounded-lg flex items-center gap-1.5 transition-all";
-            statusText.innerText = "Сохранено локально";
+            statusEl.className = "text-[10px] font-medium text-amber-400 bg-amber-500/15 border border-amber-500/30 px-2.5 py-1 rounded-lg flex items-center gap-1.5 transition-all";
+            statusText.innerText = "Перезапустите бота";
           }
           return;
         }
