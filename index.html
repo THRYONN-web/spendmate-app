@@ -94,7 +94,7 @@
     }
   </style>
 </head>
-<body class="p-4 pb-24 select-none min-h-screen">
+<body class="p-4 pb-20 select-none min-h-screen">
 
   <!-- Шапка профиля -->
   <header class="flex justify-between items-center mb-5">
@@ -109,8 +109,16 @@
       </h1>
     </div>
 
-    <div id="sub-counter-badge" class="surface-card px-3 py-1.5 rounded-xl text-xs font-mono-num text-zinc-300 font-medium">
-      0/3
+    <div class="flex items-center gap-2">
+      <!-- Индикатор автосохранения -->
+      <div id="sync-status" class="text-[10px] font-medium text-emerald-400 bg-emerald-500/10 border border-emerald-500/25 px-2.5 py-1 rounded-lg flex items-center gap-1.5 transition-all">
+        <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+        <span id="sync-status-text">Синхронизировано</span>
+      </div>
+
+      <div id="sub-counter-badge" class="surface-card px-3 py-1.5 rounded-xl text-xs font-mono-num text-zinc-300 font-medium">
+        0/3
+      </div>
     </div>
   </header>
 
@@ -216,22 +224,16 @@
     </section>
   </main>
 
-  <!-- Резервная кнопка (отображается только при тесте в обычном браузере вне Telegram) -->
-  <div id="sync-bar" class="hidden fixed bottom-0 left-0 right-0 p-4 bg-zinc-950/90 backdrop-blur-md border-t border-zinc-800 z-50">
-    <button type="button" onclick="syncWithBot()" class="btn-emerald w-full py-3.5 font-extrabold rounded-xl text-sm flex items-center justify-center gap-2">
-      <span>💾 Сохранить изменения</span>
-    </button>
-  </div>
-
   <script>
     const tg = window.Telegram?.WebApp;
+    const SYNC_API_URL = "https://spendmate-sync.8altopunov.workers.dev/api/sync";
     let appState = { is_pro: false, subs: [] };
+    let autoSaveTimer = null;
 
     if (tg) {
       tg.ready();
       tg.expand();
 
-      // Красим системную шапку и фон окна Telegram в наш графитовый цвет
       try {
         tg.setHeaderColor('#121417');
         tg.setBackgroundColor('#121417');
@@ -243,22 +245,67 @@
           <span id="pro-badge" class="hidden text-[10px] font-mono-num bg-emerald-500/15 text-emerald-300 border border-emerald-500/40 px-2 py-0.5 rounded-md font-bold tracking-wider">PRO</span>
         `;
       }
-
-      // Настраиваем единственную нативную кнопку сохранения внизу экрана
-      tg.MainButton.setText("💾 СОХРАНИТЬ ИЗМЕНЕНИЯ");
-      tg.MainButton.color = "#10B981";
-      tg.MainButton.textColor = "#042f2e";
-      tg.MainButton.onClick(syncWithBot);
-      tg.MainButton.hide();
     }
 
-    function markDirty() {
+    function getUserId() {
+      const urlParams = new URLSearchParams(window.location.search);
+      return tg?.initDataUnsafe?.user?.id || parseInt(urlParams.get('u')) || 0;
+    }
+
+    function triggerAutoSave() {
       localStorage.setItem('spendmate_cache', JSON.stringify(appState));
-      if (tg && tg.initData) {
-        tg.MainButton.show();
-      } else {
-        document.getElementById('sync-bar')?.classList.remove('hidden');
+
+      const statusEl = document.getElementById('sync-status');
+      const statusText = document.getElementById('sync-status-text');
+
+      if (statusEl && statusText) {
+        statusEl.className = "text-[10px] font-medium text-amber-300 bg-amber-500/15 border border-amber-500/30 px-2.5 py-1 rounded-lg flex items-center gap-1.5 transition-all";
+        statusText.innerText = "Сохранение...";
       }
+
+      if (autoSaveTimer) {
+        clearTimeout(autoSaveTimer);
+      }
+
+      autoSaveTimer = setTimeout(async () => {
+        const userId = getUserId();
+        if (!userId) {
+          console.warn("User ID не определен, сохранено локально.");
+          if (statusEl && statusText) {
+            statusEl.className = "text-[10px] font-medium text-emerald-400 bg-emerald-500/10 border border-emerald-500/25 px-2.5 py-1 rounded-lg flex items-center gap-1.5 transition-all";
+            statusText.innerText = "Сохранено локально";
+          }
+          return;
+        }
+
+        try {
+          const resp = await fetch(SYNC_API_URL, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              user_id: userId,
+              subs: appState.subs
+            })
+          });
+
+          if (resp.ok) {
+            if (statusEl && statusText) {
+              statusEl.className = "text-[10px] font-medium text-emerald-400 bg-emerald-500/10 border border-emerald-500/25 px-2.5 py-1 rounded-lg flex items-center gap-1.5 transition-all";
+              statusText.innerText = "Синхронизировано";
+            }
+          } else {
+            throw new Error(`HTTP ${resp.status}`);
+          }
+        } catch (err) {
+          console.error("Ошибка синхронизации:", err);
+          if (statusEl && statusText) {
+            statusEl.className = "text-[10px] font-medium text-rose-400 bg-rose-500/15 border border-rose-500/30 px-2.5 py-1 rounded-lg flex items-center gap-1.5 transition-all";
+            statusText.innerText = "Ошибка сети";
+          }
+        }
+      }, 500);
     }
 
     function parsePayload() {
@@ -447,29 +494,14 @@
 
       tg?.HapticFeedback?.notificationOccurred('success');
       renderDashboard();
-      markDirty();
+      triggerAutoSave();
     }
 
     function removeSubLocally(id) {
       appState.subs = appState.subs.filter(s => s.id !== id);
       tg?.HapticFeedback?.impactOccurred('medium');
       renderDashboard();
-      markDirty();
-    }
-
-    function syncWithBot() {
-      if (tg && tg.MainButton) {
-        tg.MainButton.hide();
-      }
-      const payload = {
-        action: 'sync_subs',
-        subs: appState.subs
-      };
-      if (tg && tg.sendData) {
-        tg.sendData(JSON.stringify(payload));
-      } else {
-        alert('Синхронизация: ' + JSON.stringify(payload));
-      }
+      triggerAutoSave();
     }
 
     parsePayload();
