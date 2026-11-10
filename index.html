@@ -227,8 +227,9 @@
   <script>
     const tg = window.Telegram?.WebApp;
     const SYNC_API_URL = "https://spendmate-sync.8altopunov.workers.dev/api/sync";
-    let appState = { is_pro: false, subs: [] };
+    let appState = { is_pro: false, subs: [], user_id: 0, updated_at: 0 };
     let autoSaveTimer = null;
+    let isSyncing = false;
 
     if (tg) {
       tg.ready();
@@ -249,69 +250,135 @@
 
     function getUserId() {
       const urlParams = new URLSearchParams(window.location.search);
-      return appState?.user_id || parseInt(urlParams.get('u')) || tg?.initDataUnsafe?.user?.id || 0;
+      const rawU = urlParams.get('u');
+      const paramU = rawU ? parseInt(rawU, 10) : 0;
+      const tgUser = tg?.initDataUnsafe?.user?.id ? parseInt(tg.initDataUnsafe.user.id, 10) : 0;
+      const stateUser = appState?.user_id ? parseInt(appState.user_id, 10) : 0;
+
+      const resolved = stateUser || paramU || tgUser || 0;
+      if (resolved && (!appState.user_id || appState.user_id !== resolved)) {
+        appState.user_id = resolved;
+      }
+      return resolved;
     }
 
-    function triggerAutoSave() {
-      localStorage.setItem('spendmate_cache', JSON.stringify(appState));
-
+    function setSyncStatus(state, text) {
       const statusEl = document.getElementById('sync-status');
       const statusText = document.getElementById('sync-status-text');
+      if (!statusEl || !statusText) return;
 
-      if (statusEl && statusText) {
+      if (state === 'syncing') {
         statusEl.className = "text-[10px] font-medium text-amber-300 bg-amber-500/15 border border-amber-500/30 px-2.5 py-1 rounded-lg flex items-center gap-1.5 transition-all";
-        statusText.innerText = "Сохранение...";
+        statusText.innerText = text || "Сохранение...";
+      } else if (state === 'synced') {
+        statusEl.className = "text-[10px] font-medium text-emerald-400 bg-emerald-500/10 border border-emerald-500/25 px-2.5 py-1 rounded-lg flex items-center gap-1.5 transition-all";
+        statusText.innerText = text || "Синхронизировано";
+      } else if (state === 'error') {
+        statusEl.className = "text-[10px] font-medium text-rose-400 bg-rose-500/15 border border-rose-500/30 px-2.5 py-1 rounded-lg flex items-center gap-1.5 transition-all";
+        statusText.innerText = text || "Ошибка сети";
+      } else if (state === 'offline') {
+        statusEl.className = "text-[10px] font-medium text-zinc-300 bg-zinc-800 border border-zinc-700 px-2.5 py-1 rounded-lg flex items-center gap-1.5 transition-all";
+        statusText.innerText = text || "Оффлайн (в очереди)";
       }
+    }
+
+    async function executeSync() {
+      if (isSyncing) return;
+      const userId = getUserId();
+      if (!userId) {
+        console.warn("User ID не определен!");
+        setSyncStatus('error', 'Перезапустите бота');
+        return;
+      }
+
+      isSyncing = true;
+      setSyncStatus('syncing', 'Сохранение...');
+
+      const payload = {
+        user_id: userId,
+        initData: tg?.initData || "",
+        subs: appState.subs || []
+      };
+
+      try {
+        const resp = await fetch(SYNC_API_URL, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify(payload),
+          keepalive: true
+        });
+
+        if (resp.ok) {
+          localStorage.removeItem('spendmate_pending_sync');
+          setSyncStatus('synced', 'Синхронизировано');
+        } else {
+          throw new Error(`HTTP ${resp.status}`);
+        }
+      } catch (err) {
+        console.error("Ошибка синхронизации:", err);
+        localStorage.setItem('spendmate_pending_sync', 'true');
+        setSyncStatus('error', 'Ошибка сети (повтор)');
+      } finally {
+        isSyncing = false;
+      }
+    }
+
+    function triggerAutoSave(immediate = false) {
+      appState.updated_at = Date.now();
+      localStorage.setItem('spendmate_cache', JSON.stringify(appState));
+      localStorage.setItem('spendmate_pending_sync', 'true');
 
       if (autoSaveTimer) {
         clearTimeout(autoSaveTimer);
+        autoSaveTimer = null;
       }
 
-      autoSaveTimer = setTimeout(async () => {
-        const userId = getUserId();
-        if (!userId) {
-          console.warn("User ID не определен!");
-          if (statusEl && statusText) {
-            statusEl.className = "text-[10px] font-medium text-amber-400 bg-amber-500/15 border border-amber-500/30 px-2.5 py-1 rounded-lg flex items-center gap-1.5 transition-all";
-            statusText.innerText = "Перезапустите бота";
-          }
-          return;
-        }
-
-        try {
-          const resp = await fetch(SYNC_API_URL, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-              user_id: userId,
-              subs: appState.subs
-            })
-          });
-
-          if (resp.ok) {
-            if (statusEl && statusText) {
-              statusEl.className = "text-[10px] font-medium text-emerald-400 bg-emerald-500/10 border border-emerald-500/25 px-2.5 py-1 rounded-lg flex items-center gap-1.5 transition-all";
-              statusText.innerText = "Синхронизировано";
-            }
-          } else {
-            throw new Error(`HTTP ${resp.status}`);
-          }
-        } catch (err) {
-          console.error("Ошибка синхронизации:", err);
-          if (statusEl && statusText) {
-            statusEl.className = "text-[10px] font-medium text-rose-400 bg-rose-500/15 border border-rose-500/30 px-2.5 py-1 rounded-lg flex items-center gap-1.5 transition-all";
-            statusText.innerText = "Ошибка сети";
-          }
-        }
-      }, 500);
+      if (immediate) {
+        executeSync();
+      } else {
+        setSyncStatus('syncing', 'Сохранение...');
+        autoSaveTimer = setTimeout(() => {
+          executeSync();
+        }, 300);
+      }
     }
+
+    // Принудительный сброс очереди при выходе или сворачивании окна
+    function flushSync() {
+      if (localStorage.getItem('spendmate_pending_sync') === 'true') {
+        if (autoSaveTimer) {
+          clearTimeout(autoSaveTimer);
+          autoSaveTimer = null;
+        }
+        executeSync();
+      }
+    }
+
+    window.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') flushSync();
+    });
+    window.addEventListener('pagehide', flushSync);
+    window.addEventListener('beforeunload', flushSync);
+    window.addEventListener('online', () => {
+      if (localStorage.getItem('spendmate_pending_sync') === 'true') {
+        executeSync();
+      }
+    });
 
     function parsePayload() {
       try {
         const urlParams = new URLSearchParams(window.location.search);
         let encoded = urlParams.get('d');
+        const urlVersion = parseInt(urlParams.get('v') || "0", 10) * 1000;
+        const cachedStr = localStorage.getItem('spendmate_cache');
+        const hasPendingSync = localStorage.getItem('spendmate_pending_sync') === 'true';
+
+        let cached = null;
+        if (cachedStr) {
+          try { cached = JSON.parse(cachedStr); } catch (e) {}
+        }
 
         if (encoded) {
           encoded = encoded.replace(/-/g, '+').replace(/_/g, '/');
@@ -321,25 +388,32 @@
           const decodedJson = new TextDecoder().decode(bytes);
           const parsed = JSON.parse(decodedJson);
 
-          if (parsed && Array.isArray(parsed.subs)) {
+          // Если в локальном кэше есть неотправленные правки и они свежее ссылки бота, сохраняем локальные!
+          if (cached && hasPendingSync && (cached.updated_at || 0) > urlVersion) {
+            appState = cached;
+            triggerAutoSave(true);
+          } else if (parsed && Array.isArray(parsed.subs)) {
             appState = parsed;
+            appState.updated_at = urlVersion || Date.now();
             localStorage.setItem('spendmate_cache', JSON.stringify(appState));
           }
-        } else {
-          const cached = localStorage.getItem('spendmate_cache');
-          if (cached) {
-            const parsed = JSON.parse(cached);
-            if (parsed && Array.isArray(parsed.subs)) appState = parsed;
-          }
+        } else if (cached && Array.isArray(cached.subs)) {
+          appState = cached;
         }
       } catch (err) {
         console.error("Ошибка чтения данных:", err);
       }
 
       if (!appState || !Array.isArray(appState.subs)) {
-        appState = { is_pro: false, subs: [] };
+        appState = { is_pro: false, subs: [], user_id: 0, updated_at: Date.now() };
       }
+
+      getUserId();
       renderDashboard();
+
+      if (localStorage.getItem('spendmate_pending_sync') === 'true') {
+        triggerAutoSave(true);
+      }
     }
 
     function getDaysUntil(payDay) {
